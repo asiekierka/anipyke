@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import re
+import shutil
 import sys
 import url_normalize
 
@@ -92,7 +93,44 @@ def remove_index_url(url):
         url = url.rsplit("/", maxsplit=1)[0]
     return url
 
-def normalize_url(url):
-    url = remove_index_url(url)
+def remove_html_last_url(url):
+    if url.lower().endswith(".html") or url.lower().endswith(".htm"):
+        url = url.rsplit("/", maxsplit=1)[0]
+    return url
+
+def normalize_url(url, keep_index=False):
+    if not keep_index:
+        url = remove_index_url(url)
     res = url_normalize.url_normalize(url).replace("https://", "http://")
     return res
+
+def patch_file(path, userdata, patcher):
+    orig_path = path + ".origanipyke"
+    if not os.path.exists(orig_path):
+        shutil.move(path, orig_path)
+    else:
+        with open(orig_path, "rb") as f:
+            data = f.read()
+        data = patcher(data, userdata)
+        with open(path, "wb") as f:
+            f.write(data)
+
+def add_html_meta_utf8(html):
+    new_meta = html.new_tag("meta")
+    new_meta.attrs["charset"] = "utf-8"
+    html.head.append(new_meta)
+        
+def get_url_variants(url):
+    url_variants = [url]
+    if url.startswith("http://www."):
+        url_variants.append(url.replace("http://www.", "http://"))
+    else:
+        if len(url.split("://", maxsplit=1)[1].split("/", maxsplit=1)[0].split(".")) <= 2:
+            url_variants.append(url.replace("http://", "http://www."))
+    return url_variants
+
+def create_dir_parent(path):
+    try:
+        os.makedirs(os.path.dirname(path))
+    except FileExistsError:
+        pass

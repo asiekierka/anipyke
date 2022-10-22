@@ -11,6 +11,7 @@ lxml = "*"
 requests = "*"
 sqlalchemy = "~=2.0.0b2"
 url-normalize = "~=1.4.3"
+warcio = "~=1.7.4"
 
 [requires]
 python_version = "3.10"

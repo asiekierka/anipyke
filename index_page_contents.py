@@ -39,6 +39,7 @@ with db.new_session() as session:
                 if link not in websites:
                     websites[link] = db.AnipikeWebsite()
                     websites[link].link = link
+                    websites[link].link_normalized = normalize_url(link, keep_index=True)
                 websites[link].interval.add(aniDate)
 
         obj.contents = str(html)

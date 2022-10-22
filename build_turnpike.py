@@ -8,7 +8,7 @@ import re
 import sqlalchemy
 import sys
 
-target_date = datetime.date(1999, 4, 12)
+target_date = datetime.date(2001, 1, 1)
 logger.info(f"=== Building Turnpike for date {target_date} ===")
 target_path = f"output"
 
@@ -29,6 +29,8 @@ def request_anipike_file(filename):
     if filename not in anipike_files_added:
         if filename not in anipike_files_to_add:
             anipike_files_to_add.append(filename)
+
+absolute_urls = {}
 
 def to_anipike_url(url, current):
     if "://" not in url:
@@ -51,6 +53,7 @@ def to_anipike_url(url, current):
     return url
 
 def anipike_map_url(url, current):
+    global absolute_urls
     orig_url = url
     url = to_anipike_url(url, current)
     if ("://" not in url):
@@ -58,12 +61,18 @@ def anipike_map_url(url, current):
         return orig_url
     else:
         url = normalize_url(url)
-        url = db.get_archived_url(url, target_date)
-        if url is not None:
-            logger.info(f"Found URL: {url}")
-            return url
+        url_key = url
+        if url_key in absolute_urls:
+            return absolute_urls[url_key]
         else:
-            return None
+            url = db.get_archived_url(url, target_date)
+            if url is not None:
+                absolute_urls[url_key] = url
+                logger.info(f"Found URL: {url}")
+                return url
+            else:
+                absolute_urls[url_key] = None
+                return None
 
 def anipike_delete_element(el):
     if el.parent.name in ['li']:
@@ -81,13 +90,13 @@ with db.new_session() as session:
             logger.warning(f"Could not find {filename}")
             continue
         if ext_is_html(filename):
+            if type(data) != str:
+                data = data.decode("windows-1252")
             html = BeautifulSoup(data, 'lxml')
             map_html_urls(html, lambda u: anipike_map_url(u, filename), lambda x: anipike_delete_element(x))
             
-            new_meta = html.new_tag("meta")
-            new_meta.attrs["charset"] = "utf-8"
-            html.head.append(new_meta)
-            
+            add_html_meta_utf8(html)
+
             data = str(html)
 
         if type(data) == str:
@@ -99,3 +108,14 @@ with db.new_session() as session:
             pass
         with open(target_filename, "wb") as f:
             f.write(data)
+
+# fix index.html one last time
+with open("output/index.html", "r") as f:
+    index_data = f.read()
+
+found_urls = len(list(filter(lambda k: absolute_urls[k] is not None, absolute_urls.keys())))
+all_urls = len(absolute_urls)
+index_data = index_data.replace("Creation Date: 8/16/95", f"Creation Date: 8/16/95 / Preserved: {found_urls}/{all_urls} URLs<br>Unofficial restoration by <a href=\"http://asie.pl\">asie</a> for archival/education purposes.")
+
+with open("output/index.html", "w") as f:
+    f.write(index_data)

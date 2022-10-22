@@ -17,9 +17,6 @@ for filePath in list_anipike_pages(lambda x: True, html_only=False):
     targetPath = f"static/{aniPath}"
     if os.path.exists(targetPath):
         continue
-    try:
-        os.makedirs(os.path.dirname(targetPath))
-    except FileExistsError:
-        pass
     logger.info(targetPath)
+    create_dir_parent(targetPath)
     shutil.copy(filePath, targetPath)

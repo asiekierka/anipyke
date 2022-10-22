@@ -22,7 +22,7 @@ with db.new_session() as session:
     session.execute(sqlalchemy.delete(db.UrlLocation).where(db.UrlLocation.source == "dokan"))
 
     # List all Dokan directories
-    for d in filter(lambda x: x.lower().startswith("dokan"), os.listdir("./manual_websites/")):
+    for d in filter(lambda x: x.lower().endswith("webs"), os.listdir("./manual_websites/")):
         dokan_path = f"manual_websites/{d}"
         if os.path.isdir(dokan_path):
             url_path = None

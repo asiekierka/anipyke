@@ -1,6 +1,7 @@
 from sqlalchemy import *
 from sqlalchemy.ext.mutable import MutableComposite
 from sqlalchemy.orm import *
+from .lib import *
 import dataclasses
 import datetime
 import hashlib
@@ -83,6 +84,7 @@ class AnipikeWebsite(Base):
     __tablename__ = "anipike_website"
 
     link: Mapped[str] = mapped_column(primary_key=True, nullable=False)
+    link_normalized: Mapped[str] = mapped_column(nullable=True)
     interval: Mapped[Interval] = composite(mapped_column("from_date"), mapped_column("to_date"))
 
     def __init__(self):
@@ -99,6 +101,7 @@ class UrlLocation(Base):
     prefix: Mapped[str] = mapped_column()
     local_path: Mapped[str] = mapped_column(nullable=True)
     remote_path: Mapped[str] = mapped_column(nullable=True)
+    add_date: Mapped[datetime.datetime] = mapped_column()
 
     def to_root_path(self):
         date_key = self.date.strftime("%Y-%m-%d")
@@ -124,12 +127,14 @@ def get_latest_anipike_file(url, date):
             url += "index.html"
         # load html from database
         with new_session() as session:
-            result = session.execute(
-                select(AnipikePageContents)
-                    .where(and_(AnipikePageContents.subpage == url, AnipikePageContents.date <= date))
-                    .order_by(AnipikePageContents.date.desc())
-                    .limit(1)
-            ).scalar_one_or_none()
+            result = None
+            if date is not None:
+                result = session.execute(
+                    select(AnipikePageContents)
+                        .where(and_(AnipikePageContents.subpage == url, AnipikePageContents.date <= date))
+                        .order_by(AnipikePageContents.date.desc())
+                        .limit(1)
+                ).scalar_one_or_none()
             if result is None:
                 # get a newer file, if older or equal does not exist
                 result = session.execute(
@@ -151,20 +156,29 @@ def get_latest_anipike_file(url, date):
 def get_archived_url(url, date):
     # load html from database
     with new_session() as session:
-        result = session.execute(
-            select(UrlLocation)
-                .where(and_(bindparam('url', url).startswith(UrlLocation.url), UrlLocation.date <= date))
-                .order_by(UrlLocation.date.desc())
-                .limit(1)
-        ).scalar_one_or_none()
+        result = None
+        url_variants = get_url_variants(url)
+        if date is not None:
+            for url in url_variants:
+                result = session.execute(
+                    select(UrlLocation)
+                        .where(and_(bindparam('url', url).startswith(UrlLocation.url), UrlLocation.date <= date))
+                        .order_by(UrlLocation.date.desc())
+                        .limit(1)
+                ).scalar_one_or_none()
+                if result is not None:
+                    break
         if result is None:
-            # get a newer file, if older or equal does not exist
-            result = session.execute(
-                select(UrlLocation)
-                    .where(bindparam('url', url).startswith(UrlLocation.url))
-                    .order_by(UrlLocation.date)
-                    .limit(1)
-            ).scalar_one_or_none()
+            for url in url_variants:
+                # get a newer file, if older or equal does not exist
+                result = session.execute(
+                    select(UrlLocation)
+                        .where(bindparam('url', url).startswith(UrlLocation.url))
+                        .order_by(UrlLocation.date)
+                        .limit(1)
+                ).scalar_one_or_none()
+                if result is not None:
+                    break
         if result is not None:
             url_suffix = url[len(result.url):]
             if url_suffix.startswith("/"):
