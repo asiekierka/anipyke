@@ -17,7 +17,7 @@ with db.new_session() as session:
         sqlalchemy.delete(db.AnipikePageContents)
     )
     session.execute(
-        sqlalchemy.delete(db.AnipikePageContents)
+        sqlalchemy.delete(db.AnipikeWebsite)
     )
     for filePath in list_anipike_pages(lambda x: True):
         aniPath = filepath_to_anipike_path(filePath)
@@ -40,6 +40,7 @@ with db.new_session() as session:
                     websites[link] = db.AnipikeWebsite()
                     websites[link].link = link
                     websites[link].link_normalized = normalize_url(link, keep_index=True)
+                    websites[link].link_name = el.get_text(strip=True)
                 websites[link].interval.add(aniDate)
 
         obj.contents = str(html)

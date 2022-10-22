@@ -102,6 +102,8 @@ def normalize_url(url, keep_index=False):
     if not keep_index:
         url = remove_index_url(url)
     res = url_normalize.url_normalize(url).replace("https://", "http://")
+    if res.endswith("/"):
+        res = res[:-1]
     return res
 
 def patch_file(path, userdata, patcher):

@@ -86,6 +86,7 @@ class AnipikeWebsite(Base):
     link: Mapped[str] = mapped_column(primary_key=True, nullable=False)
     link_normalized: Mapped[str] = mapped_column(nullable=True)
     interval: Mapped[Interval] = composite(mapped_column("from_date"), mapped_column("to_date"))
+    link_name: Mapped[str] = mapped_column(nullable=True)
 
     def __init__(self):
         self.interval = Interval(None, None)
@@ -153,6 +154,21 @@ def get_latest_anipike_file(url, date):
     # file not found
     return None
 
+def url_location_to_url(url, result):
+    url_suffix = "" if url is None else url[len(result.url):]
+    if url_suffix.startswith("/"):
+        url_suffix = url_suffix[1:]
+    url_prefix = result.to_url_path()
+    if (not url_prefix.endswith("/")) and (len(url_suffix) > 0):
+        url_prefix += "/"
+    local_url_prefix = result.to_local_path()
+    if (not local_url_prefix.endswith("/")) and (len(url_suffix) > 0):
+        local_url_prefix += "/"
+    if os.path.exists(local_url_prefix + url_suffix):
+        return "/" + url_prefix + url_suffix
+    else:
+        return None
+
 def get_archived_url(url, date):
     # load html from database
     with new_session() as session:
@@ -180,17 +196,7 @@ def get_archived_url(url, date):
                 if result is not None:
                     break
         if result is not None:
-            url_suffix = url[len(result.url):]
-            if url_suffix.startswith("/"):
-                url_suffix = url_suffix[1:]
-            url_prefix = result.to_url_path()
-            if (not url_prefix.endswith("/")) and (len(url_suffix) > 0):
-                url_prefix += "/"
-            local_url_prefix = result.to_local_path()
-            if (not local_url_prefix.endswith("/")) and (len(url_suffix) > 0):
-                local_url_prefix += "/"
-            if os.path.exists(local_url_prefix + url_suffix):
-                return "/" + url_prefix + url_suffix
+            return url_location_to_url(url, result)
     # file not found
     return None
 

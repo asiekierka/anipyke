@@ -17,14 +17,19 @@ logger.info(f"=== Archiving webpage ===")
 
 with db.new_session() as session:
     url = normalize_url(args[1])
+    if url.endswith("/"):
+        url = url[:-1]
     url_queue = [url]
 
     for url_found in session.execute(
         sqlalchemy.select(db.AnipikeWebsite)
             .where(db.AnipikeWebsite.link_normalized.startswith(url))
     ).scalars():
-        if url_found.link_normalized not in url_queue:
-            url_queue.append(url_found.link_normalized)
+        url_proposed = url_found.link_normalized
+        if url_proposed.endswith("/"):
+            url_proposed = url_proposed[:-1]
+        if url_proposed not in url_queue:
+            url_queue.append(url_proposed)
     
     date_str = datetime.datetime.now().date().strftime("%Y%m%d")
     scraper = WebScraper(url_queue, f"new_websites/{date_str}")

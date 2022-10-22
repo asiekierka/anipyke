@@ -1,6 +1,7 @@
 from anipyke.lib import *
 from urllib.parse import urljoin
 import anipyke.db as db
+import collections
 import copy
 import logging
 import os
@@ -119,3 +120,54 @@ index_data = index_data.replace("Creation Date: 8/16/95", f"Creation Date: 8/16/
 
 with open("output/index.html", "w") as f:
     f.write(index_data)
+
+# generate new new.html
+shutil.move("output/new.html", "output/new.html.origanipyke")
+
+with open("new.html.template", "r") as f:
+    new_data = f.read()
+
+changelog_data = ""
+
+with db.new_session() as session:
+    # find all URLs added
+    new_urls = session.execute(
+        sqlalchemy.select(db.UrlLocation)
+            .where(db.UrlLocation.add_date != None)
+            .order_by(db.UrlLocation.add_date.desc())
+    ).scalars()
+
+    changes_by_date = collections.OrderedDict()
+    urls_added = {}
+
+    for url in new_urls:
+        date_str = url.add_date.strftime("%m/%d/%Y")
+        print(f"{url.prefix}")
+        for url_found in session.execute(
+            sqlalchemy.select(db.AnipikeWebsite)
+                .where(db.AnipikeWebsite.link_normalized.startswith(url.url))
+        ).scalars():
+            print(f"- {url_found.link_normalized}")
+            url_href = db.url_location_to_url(url_found.link_normalized, url)
+            if url_href is None:
+                logger.warn(f"Weird URL location: {url_href}")
+                continue
+            url_href = normalize_url(url_href)
+            if url_href not in urls_added:
+                if date_str not in changes_by_date:
+                    changes_by_date[date_str] = []
+                changes_by_date[date_str].append(f"<a href=\"{url_href}\">{url_found.link_name}</a>")
+                urls_added[url_href] = True
+
+    for ch_date, ch in changes_by_date.items():
+        changelog_data += f"<h2>{ch_date}</h2><ul>\n"
+        ch.reverse()
+        for i in ch:
+            changelog_data += f"<li>{i}</li>\n"
+        changelog_data += f"</ul>\n"
+
+new_data = new_data.replace("[CHANGELOG]", changelog_data)
+
+create_dir_parent("output/new.html")
+with open("output/new.html", "w") as f:
+    f.write(new_data)
