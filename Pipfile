@@ -14,6 +14,7 @@ sqlalchemy = "~=2.0.0b2"
 tqdm = "~=4.64.1"
 url-normalize = "~=1.4.3"
 warcio = "~=1.7.4"
+warcprox = "*"
 waybackpy = "~=3.0.6"
 
 [requires]

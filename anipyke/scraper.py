@@ -16,6 +16,13 @@ import subprocess
 import sys
 import time
 
+proxy_session = requests.Session()
+
+proxy_session.proxies = {
+   'http': 'http://127.0.0.1:23000',
+   'https': 'http://127.0.0.1:23000',
+}
+
 # [tag] = (attr, follow?)
 scrape_tag_attribute_pairs = {}
 for i in [
@@ -132,11 +139,13 @@ class WebScraper(object):
             url = url.split("#")[0]
         if (url not in self.urls_scraped) and not (url.endswith("/") and (url[:-1] in self.urls_scraped)) and not (url.endswith("index.html") and (url.rsplit("/", maxsplit=1)[0] in self.urls_scraped)):
             if follow == True:
+                was_in_queue = False
                 for entry in copy.copy(self.urls_queue):
                     if entry[0] == url:
+                        was_in_queue = True
                         self.urls_queue.remove(entry)
                 self.urls_queue.append((url, follow))
-                return True
+                return not was_in_queue
             else:
                 if url not in map(lambda x: x[0], self.urls_queue):
                     self.urls_queue.append((url, follow))
@@ -187,6 +196,8 @@ class WebScraper(object):
                         
         if any(url.startswith(x) for x in blocked_websites):
             return False
+        if ".tripod.com/adm/redirect" in url:
+            return False
         while "//" in url[9:]:
             url = url[0:9] + url[9:].replace("//", "/")
 
@@ -204,11 +215,15 @@ class WebScraper(object):
         is_html = False
         data = None
 
-        if os.path.isdir(manual_cache_path) or os.path.isdir(raw_cache_path) or os.path.isdir(html_cache_path) or os.path.isdir(wayback_cache_path) or os.path.isdir(fail_cache_path):
+        if os.path.isdir(raw_cache_path):
             raw_cache_path += "/index.html"
+        if os.path.isdir(html_cache_path):
             html_cache_path += "/index.html"
+        if os.path.isdir(wayback_cache_path):
             wayback_cache_path += "/index.html"
+        if os.path.isdir(manual_cache_path):
             manual_cache_path += "/index.html"
+        if os.path.isdir(fail_cache_path):
             fail_cache_path += "/index.html"
 
         if os.path.exists(manual_cache_path):
@@ -237,7 +252,7 @@ class WebScraper(object):
             if not any(url.startswith(x) for x in defunct_websites):
                 if wayback_date is None:
                     try:
-                        r = requests.get(url, stream=True, timeout=10)
+                        r = proxy_session.get(url, stream=True, timeout=10, verify=False)
                     except Exception:
                         logger.error("Could not download - requests connection error")
                         create_dir_parent(fail_cache_path)
@@ -341,9 +356,8 @@ class WebScraper(object):
                             pbar.total += 1
                         success = True
                     else:
-                        old_pbar_n = pbar.n
-                        success = self._scrape_immediate(follow_to_queue_link, url_follow, pbar, show_progress, wayback_date)
                         pbar.total += 1
+                        success = self._scrape_immediate(follow_to_queue_link, url_follow, pbar, show_progress, wayback_date)
 
                     if success and follow_to_link.startswith("http://"):
                         #logger.info(target_file_path)
