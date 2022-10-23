@@ -23,9 +23,9 @@ with db.new_session() as session:
     ).scalars():
         if "://" not in website.link:
             continue
-        url = db.get_archived_url(website.link, None)
+        url = db.get_archived_urls(website.link, None)
         all_websites += 1
-        if url is None:
+        if len(url) <= 0:
             print(website.link)
             missing_websites += 1
 

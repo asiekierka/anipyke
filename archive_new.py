@@ -15,8 +15,8 @@ no_create = True
 
 logger.info(f"=== Archiving webpage ===")
 
-with db.new_session() as session:
-    url = normalize_url(args[1])
+def archive(url, session, create_locations=True, local_path=None):
+    url = normalize_url(url)
     if url.endswith("/"):
         url = url[:-1]
     url_queue = [url]
@@ -31,18 +31,32 @@ with db.new_session() as session:
         if url_proposed not in url_queue:
             url_queue.append(url_proposed)
     
-    date_str = datetime.datetime.now().date().strftime("%Y%m%d")
-    scraper = WebScraper(url_queue, f"new_websites/{date_str}")
+    if local_path is None:
+        date_str = datetime.datetime.now().date().strftime("%Y%m%d")
+        local_path = f"new_websites/{date_str}"
+    scraper = WebScraper(url_queue, local_path)
     scraper.scrape()
 
-    for url in url_queue:
-        url_location = db.UrlLocation()
-        url_location.url = url
-        url_location.prefix = remove_index_url(url).replace("http://", "")
-        url_location.source = "new"
-        url_location.subkey = scraper.target_path
-        url_location.date = datetime.datetime.now().date()
-        url_location.add_date = datetime.datetime.now()
-        url_location.local_path = scraper.target_path
-        session.add(url_location)
-    session.commit()
+    if create_locations:
+        for url in url_queue:
+            url_location = db.UrlLocation()
+            url_location.url = url
+            url_location.prefix = remove_index_url(url).replace("http://", "")
+            url_location.source = "new"
+            url_location.subkey = scraper.target_path
+            url_location.date = datetime.datetime.now().date()
+            url_location.add_date = datetime.datetime.now()
+            url_location.local_path = scraper.target_path
+            session.add(url_location)
+        session.commit()
+
+
+with db.new_session() as session:
+    if args[1] == "rebuild":
+        for url_found in session.execute(
+            sqlalchemy.select(db.UrlLocation)
+                .where(db.UrlLocation.local_path.in_(args[2:]))
+        ).scalars():
+            archive(url_found.url, session, create_locations=False, local_path=url_found.local_path)
+    else:
+        archive(args[1], session)

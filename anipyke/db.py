@@ -1,13 +1,15 @@
 from sqlalchemy import *
 from sqlalchemy.ext.mutable import MutableComposite
 from sqlalchemy.orm import *
+from waybackpy import WaybackMachineCDXServerAPI
 from .lib import *
 import dataclasses
 import datetime
 import hashlib
 import os
+import requests
 
-engine = create_engine("sqlite+pysqlite:///anipyke.db", echo=False)
+engine = create_engine("sqlite+pysqlite:///anipyke.db?timeout=300", echo=False)
 
 def new_session():
     return Session(engine)
@@ -120,6 +122,77 @@ class UrlLocation(Base):
     def __init__(self):
         self.interval = Interval(None, None)
 
+class WaybackCache(Base):
+    __tablename__ = "wayback_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column()
+    date: Mapped[datetime.datetime] = mapped_column(nullable=True)
+    contents: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
+    mimetype: Mapped[str] = mapped_column(nullable=True)
+
+def get_http_contents_from_wayback(url, date, ignore_html=False):
+    with new_session() as session:
+        cache_entries = []
+        for e in session.execute(
+            select(WaybackCache)
+                .where(WaybackCache.url == url)
+        ).scalars():
+            cache_entries.append(e)
+        if len(cache_entries) <= 0:
+            user_agent = "Mozilla/5.0 (Windows NT 5.1; rv:40.0) Gecko/20100101 Firefox/40.0"
+            cdx = WaybackMachineCDXServerAPI(url, user_agent, filters=["statuscode:200"], collapses=["digest"])
+            cached_keys = {}
+            for snapshot in cdx.snapshots():
+                if snapshot.timestamp in cached_keys:
+                    continue
+                cached_keys[snapshot.timestamp] = True
+                try:
+                    r = requests.get(snapshot.archive_url, stream=True, timeout=60)
+                except Exception:
+                    logger.error(f"Could not download {snapshot.archive_url} - requests connection error")
+                    continue
+                logger.info(f"Found on Wayback: {snapshot.archive_url}")
+                if r.status_code == 200:
+                    r.raw.decode_content = True
+                    try:
+                        data = r.raw.read()
+                    except Exception:
+                        logger.error(f"Could not download {snapshot.archive_url} - requests error")
+                        continue
+                    entry = WaybackCache()
+                    entry.url = url
+                    entry.date = snapshot.datetime_timestamp
+                    entry.mimetype = snapshot.mimetype
+                    entry.contents = data
+                    cache_entries.append(entry)
+            time.sleep(5) # or else we get 503'd sometimes
+
+            if len(cache_entries) <= 0:
+                entry = WaybackCache()
+                entry.url = url
+                cache_entries.append(entry)
+            
+            for c in cache_entries:
+                session.add(c)
+            session.commit()
+                
+        cache_entries.sort(key=lambda x: [0 if ((x.mimetype is None) or x.mimetype.startswith("unk")) else 1, x.date], reverse=True)
+
+        contents = None
+        date_diff = None
+        for c in cache_entries:
+            if ignore_html and (c.mimetype is not None) and ("html" in c.mimetype):
+                continue
+            if contents is None:
+                contents = c.contents
+            if (date is None) and (contents is not None):
+                break
+            if (c.date is not None) and (date is not None) and ((date_diff is None) or (abs(c.date - date) < date_diff)):
+                contents = c.contents
+                date_diff = abs(c.date - date)
+        return contents
+
 def get_latest_anipike_file(url, date):
     if url.endswith(".htm") or url.endswith(".html") or ("." not in url):
         if ("." not in url):
@@ -169,35 +242,38 @@ def url_location_to_url(url, result):
     else:
         return None
 
-def get_archived_url(url, date):
+def get_archived_urls(url, date):
     # load html from database
     with new_session() as session:
         result = None
-        url_variants = get_url_variants(url)
+        url_variants = list(map(lambda x: x if x.endswith("/") else (x+"/"), get_url_variants(url)))
+        if "fredart" in url:
+            print(url_variants)
+        finds = []
         if date is not None:
-            for url in url_variants:
-                result = session.execute(
+            for uv in url_variants:
+                for result in session.execute(
                     select(UrlLocation)
-                        .where(and_(bindparam('url', url).startswith(UrlLocation.url), UrlLocation.date <= date))
+                        .where(and_(bindparam('url', uv).startswith(UrlLocation.url), UrlLocation.date <= date))
                         .order_by(UrlLocation.date.desc())
-                        .limit(1)
-                ).scalar_one_or_none()
-                if result is not None:
-                    break
-        if result is None:
-            for url in url_variants:
-                # get a newer file, if older or equal does not exist
-                result = session.execute(
+                ).scalars():
+                    finds.append(url_location_to_url(url, result))
+            for uv in url_variants:
+                for result in session.execute(
                     select(UrlLocation)
-                        .where(bindparam('url', url).startswith(UrlLocation.url))
+                        .where(and_(bindparam('url', uv).startswith(UrlLocation.url), UrlLocation.date > date))
                         .order_by(UrlLocation.date)
-                        .limit(1)
-                ).scalar_one_or_none()
-                if result is not None:
-                    break
-        if result is not None:
-            return url_location_to_url(url, result)
-    # file not found
-    return None
+                ).scalars():
+                    finds.append(url_location_to_url(url, result))
+        else:
+            for uv in url_variants:
+                # get a newer file, if older or equal does not exist
+                for result in session.execute(
+                    select(UrlLocation)
+                        .where(bindparam('url', uv).startswith(UrlLocation.url))
+                        .order_by(UrlLocation.date)
+                ).scalars():
+                    finds.append(url_location_to_url(url, result))
+    return list(filter(lambda x: x is not None, finds))
 
 Base.metadata.create_all(engine)

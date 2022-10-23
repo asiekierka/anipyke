@@ -66,11 +66,11 @@ def anipike_map_url(url, current):
         if url_key in absolute_urls:
             return absolute_urls[url_key]
         else:
-            url = db.get_archived_url(url, target_date)
-            if url is not None:
-                absolute_urls[url_key] = url
-                logger.info(f"Found URL: {url}")
-                return url
+            url = db.get_archived_urls(url, target_date)
+            if len(url) > 0:
+                absolute_urls[url_key] = url[0]
+                logger.info(f"Found URL: {url[0]}")
+                return url[0]
             else:
                 absolute_urls[url_key] = None
                 return None
