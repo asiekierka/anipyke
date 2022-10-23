@@ -133,7 +133,14 @@ class WaybackCache(Base):
     contents: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
     mimetype: Mapped[str] = mapped_column(nullable=True)
 
+skip_wayback_websites = [
+    "http://members.tripod.com/GeneralsLove", # none on wayback, 100+ missing TXT files, takes ages
+    "http://members.tripod.com/~K_Seiya"
+]
+
 def get_http_contents_from_wayback(url, date, ignore_html=False):
+    if any(url.startswith(x) for x in skip_wayback_websites):
+        return None, False
     with new_session() as session:
         cache_entries = []
         for e in session.execute(
@@ -269,7 +276,8 @@ still_online_urls = {
     "!http://theria.net/yaminomatsuei": "http://www.theria.net/archive-top.html",
     "!http://theria.net/yst": "http://www.theria.net/archive-top.html",
     "!http://theria.net/yst/archive/index.html#lyrics": "http://www.theria.net/yst-lyrics.html",
-    "http://digilander.iol.it/haranban": "http://www.tvcartoonmania.com"
+    "http://digilander.iol.it/haranban": "http://www.tvcartoonmania.com",
+    "http://hp.vector.co.jp/authors/VA008023": "http://hp.vector.co.jp/authors/VA008023"
 }
 
 def get_archived_urls(url, date):

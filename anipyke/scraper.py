@@ -27,6 +27,7 @@ proxy_session.proxies = {
 scrape_tag_attribute_pairs = {}
 for i in [
     ("body", "background", False), # oddballs
+    ("table", "background", False),
     ("frame", "src", True),
     ("iframe", "src", True),
     ("a", "href", True), # https://www.w3.org/TR/html401/sgml/dtd.html#URI
@@ -65,6 +66,7 @@ blocked_websites = [
     "http://ln.doubleclick.net",
     "http://ad.linkexchange.com",
     "http://banner.linkexchange.com",
+    "http://fastcounter.linkexchange.com",
     "http://leader.linkexchange.com",
     "http://hb.lycos.com/header"
 ]
@@ -280,10 +282,14 @@ class WebScraper(object):
 
                 if is_html:
                     if has_no_extension(target_file_path) or is_root_page(url):
-                        raw_cache_path += "/index.html"
-                        html_cache_path += "/index.html"
-                        wayback_cache_path += "/index.html"
-                        fail_cache_path += "/index.html"
+                        if not raw_cache_path.endswith("/index.html"):
+                            raw_cache_path += "/index.html"
+                        if not html_cache_path.endswith("/index.html"):
+                            html_cache_path += "/index.html"
+                        if not wayback_cache_path.endswith("/index.html"):
+                            wayback_cache_path += "/index.html"
+                        if not fail_cache_path.endswith("/index.html"):
+                            fail_cache_path += "/index.html"
 
                 cache_path = html_cache_path if is_html else raw_cache_path
                 create_dir_parent(cache_path)
@@ -296,10 +302,14 @@ class WebScraper(object):
                         logger.info("Found on Wayback, continuing...")
                         if is_html:
                             if has_no_extension(target_file_path) or is_root_page(url):
-                                raw_cache_path += "/index.html"
-                                html_cache_path += "/index.html"
-                                wayback_cache_path += "/index.html"
-                                fail_cache_path += "/index.html"
+                                if not raw_cache_path.endswith("/index.html"):
+                                    raw_cache_path += "/index.html"
+                                if not html_cache_path.endswith("/index.html"):
+                                    html_cache_path += "/index.html"
+                                if not wayback_cache_path.endswith("/index.html"):
+                                    wayback_cache_path += "/index.html"
+                                if not fail_cache_path.endswith("/index.html"):
+                                    fail_cache_path += "/index.html"
                         create_dir_parent(wayback_cache_path)
                         with open(wayback_cache_path, "wb") as f:
                             f.write(data)
