@@ -90,12 +90,12 @@ def read_html(filePath):
 
 def remove_index_url(url):
     if url.lower().endswith("/index.html") or url.lower().endswith("/index.htm"):
-        url = url.rsplit("/", maxsplit=1)[0]
+        url = url[:url.rindex("/")]
     return url
 
 def remove_html_last_url(url):
     if url.lower().endswith(".html") or url.lower().endswith(".htm"):
-        url = url.rsplit("/", maxsplit=1)[0]
+        url = url[:url.rindex("/")]
     return url
 
 def normalize_url(url, keep_index=False):
@@ -127,7 +127,7 @@ def get_url_variants(url):
     if url.startswith("http://www."):
         url_variants.append(url.replace("http://www.", "http://"))
     else:
-        if len(url.split("://", maxsplit=1)[1].split("/", maxsplit=1)[0].split(".")) <= 2:
+        if len(url[url.index("://")+3:].split("/", maxsplit=1)[0].split(".")) <= 2:
             url_variants.append(url.replace("http://", "http://www."))
     return url_variants
 

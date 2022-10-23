@@ -93,7 +93,7 @@ with db.new_session() as session:
         if ext_is_html(filename):
             if type(data) != str:
                 data = data.decode("windows-1252")
-            html = BeautifulSoup(data, 'lxml')
+            html = BeautifulSoup(data, 'html5lib')
             map_html_urls(html, lambda u: anipike_map_url(u, filename), lambda x: anipike_delete_element(x))
             
             add_html_meta_utf8(html)

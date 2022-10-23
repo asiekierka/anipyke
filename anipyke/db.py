@@ -8,6 +8,7 @@ import datetime
 import hashlib
 import os
 import requests
+import time
 
 engine = create_engine("sqlite+pysqlite:///anipyke.db?timeout=300", echo=False)
 
@@ -105,6 +106,7 @@ class UrlLocation(Base):
     local_path: Mapped[str] = mapped_column(nullable=True)
     remote_path: Mapped[str] = mapped_column(nullable=True)
     add_date: Mapped[datetime.datetime] = mapped_column()
+    job_id: Mapped[str] = mapped_column(nullable=True)
 
     def to_root_path(self):
         date_key = self.date.strftime("%Y-%m-%d")
@@ -141,33 +143,44 @@ def get_http_contents_from_wayback(url, date, ignore_html=False):
             cache_entries.append(e)
         if len(cache_entries) <= 0:
             user_agent = "Mozilla/5.0 (Windows NT 5.1; rv:40.0) Gecko/20100101 Firefox/40.0"
-            cdx = WaybackMachineCDXServerAPI(url, user_agent, filters=["statuscode:200"], collapses=["digest"])
             cached_keys = {}
-            for snapshot in cdx.snapshots():
-                if snapshot.timestamp in cached_keys:
-                    continue
-                cached_keys[snapshot.timestamp] = True
+            retries = 7
+            retry_sleep = 15
+            while retries > 0:
                 try:
-                    r = requests.get(snapshot.archive_url, stream=True, timeout=60)
-                except Exception:
-                    logger.error(f"Could not download {snapshot.archive_url} - requests connection error")
-                    continue
-                logger.info(f"Found on Wayback: {snapshot.archive_url}")
-                if r.status_code == 200:
-                    r.raw.decode_content = True
-                    try:
-                        data = r.raw.read()
-                    except Exception:
-                        logger.error(f"Could not download {snapshot.archive_url} - requests error")
-                        continue
-                    entry = WaybackCache()
-                    entry.url = url
-                    entry.date = snapshot.datetime_timestamp
-                    entry.mimetype = snapshot.mimetype
-                    entry.contents = data
-                    cache_entries.append(entry)
-            time.sleep(5) # or else we get 503'd sometimes
-
+                    cdx = WaybackMachineCDXServerAPI(url, user_agent, max_tries=1, filters=["statuscode:200"], collapses=["digest"])
+                    for snapshot in cdx.snapshots():
+                        if snapshot.timestamp in cached_keys:
+                            continue
+                        cached_keys[snapshot.timestamp] = True
+                        archive_url = f"https://web.archive.org/web/{snapshot.timestamp}id_/{snapshot.original}"
+                        try:
+                            r = requests.get(archive_url, stream=True, timeout=60)
+                        except Exception:
+                            logger.error(f"Could not download {archive_url} - requests connection error")
+                            continue
+                        logger.info(f"Found on Wayback: {archive_url}")
+                        if r.status_code == 200:
+                            r.raw.decode_content = True
+                            try:
+                                data = r.raw.read()
+                            except Exception:
+                                logger.error(f"Could not download {archive_url} - requests error")
+                                continue
+                            entry = WaybackCache()
+                            entry.url = url
+                            entry.date = snapshot.datetime_timestamp
+                            entry.mimetype = snapshot.mimetype
+                            entry.contents = data
+                            cache_entries.append(entry)
+                    retries = 0
+                except requests.exceptions.RetryError as exc:
+                    retries -= 1
+                    if retries <= 0:
+                        raise exc
+                    logger.info(f"Overburdening Wayback, backing off for {retry_sleep} seconds...")
+                    time.sleep(retry_sleep)
+                    retry_sleep = int(retry_sleep * 1.5)
             if len(cache_entries) <= 0:
                 entry = WaybackCache()
                 entry.url = url
@@ -180,18 +193,21 @@ def get_http_contents_from_wayback(url, date, ignore_html=False):
         cache_entries.sort(key=lambda x: [0 if ((x.mimetype is None) or x.mimetype.startswith("unk")) else 1, x.date], reverse=True)
 
         contents = None
+        mimetype = None
         date_diff = None
         for c in cache_entries:
             if ignore_html and (c.mimetype is not None) and ("html" in c.mimetype):
                 continue
             if contents is None:
                 contents = c.contents
+                mimetype = c.mimetype
             if (date is None) and (contents is not None):
                 break
             if (c.date is not None) and (date is not None) and ((date_diff is None) or (abs(c.date - date) < date_diff)):
                 contents = c.contents
+                mimetype = c.mimetype
                 date_diff = abs(c.date - date)
-        return contents
+        return contents, ((mimetype is not None) and ("html" in mimetype))
 
 def get_latest_anipike_file(url, date):
     if url.endswith(".htm") or url.endswith(".html") or ("." not in url):
@@ -242,7 +258,30 @@ def url_location_to_url(url, result):
     else:
         return None
 
+still_online_urls = {
+    "http://otakuworld.com": "http://otakuworld.com",
+    "http://www.otakuworld.com": "http://www.otakuworld.com",
+    "http://niko-niko.net": "http://niko-niko.net",
+    "http://www.therossman.com": "http://www.therossman.com",
+    "!http://cnn.com/WORLD/9712/17/video.seizures.update ": "http://cnn.com/WORLD/9712/17/video.seizures.update/index.html",
+    "!http://theria.net/slayers": "http://www.theria.net/index.html",
+    "!http://theria.net/slayers/index.html": "http://www.theria.net/index.html",
+    "!http://theria.net/yaminomatsuei": "http://www.theria.net/archive-top.html",
+    "!http://theria.net/yst": "http://www.theria.net/archive-top.html",
+    "!http://theria.net/yst/archive/index.html#lyrics": "http://www.theria.net/yst-lyrics.html",
+    "http://digilander.iol.it/haranban": "http://www.tvcartoonmania.com"
+}
+
 def get_archived_urls(url, date):
+    # short-circuit a few sites
+    if "otakuworld.com/guide" not in url:
+        for x in still_online_urls.keys():
+            if x.startswith("!"):
+                if url == x[1:]:
+                    logger.info(f"Using manual replacement for {x[1:]}")
+                    return [still_online_urls[x]]
+            if url.startswith(x):
+                return [url.replace(x, still_online_urls[x])]
     # load html from database
     with new_session() as session:
         result = None
@@ -250,30 +289,22 @@ def get_archived_urls(url, date):
         if "fredart" in url:
             print(url_variants)
         finds = []
+        for uv in url_variants:
+            for result in session.execute(
+                select(UrlLocation)
+                    .where(bindparam('url', uv).startswith(UrlLocation.url))
+            ).scalars():
+                finds.append((url_location_to_url(url, result), result.date))
+        finds = list(filter(lambda x: x[0] is not None, finds))
         if date is not None:
-            for uv in url_variants:
-                for result in session.execute(
-                    select(UrlLocation)
-                        .where(and_(bindparam('url', uv).startswith(UrlLocation.url), UrlLocation.date <= date))
-                        .order_by(UrlLocation.date.desc())
-                ).scalars():
-                    finds.append(url_location_to_url(url, result))
-            for uv in url_variants:
-                for result in session.execute(
-                    select(UrlLocation)
-                        .where(and_(bindparam('url', uv).startswith(UrlLocation.url), UrlLocation.date > date))
-                        .order_by(UrlLocation.date)
-                ).scalars():
-                    finds.append(url_location_to_url(url, result))
+            finds_prev = list(filter(lambda x: x[1] <= date, finds))
+            finds_next = list(filter(lambda x: x[1] > date, finds))
+            finds_prev.sort(key=lambda x: x[1], reverse=True)
+            finds_next.sort(key=lambda x: x[1], reverse=False)
+            return list(map(lambda x: x[0], finds_prev + finds_next))
         else:
-            for uv in url_variants:
-                # get a newer file, if older or equal does not exist
-                for result in session.execute(
-                    select(UrlLocation)
-                        .where(bindparam('url', uv).startswith(UrlLocation.url))
-                        .order_by(UrlLocation.date)
-                ).scalars():
-                    finds.append(url_location_to_url(url, result))
-    return list(filter(lambda x: x is not None, finds))
+            finds.sort(key=lambda x: x[1], reverse=False)
+            return list(map(lambda x: x[0], finds))
+
 
 Base.metadata.create_all(engine)
