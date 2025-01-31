@@ -66,7 +66,7 @@ def anipike_map_url(url, current):
         if url_key in absolute_urls:
             return absolute_urls[url_key]
         else:
-            url = db.get_archived_urls(url, target_date)
+            url, url_sources = db.get_archived_urls(url, target_date)
             if len(url) > 0:
                 absolute_urls[url_key] = url[0]
                 logger.info(f"Found URL: {url[0]}")
@@ -170,4 +170,47 @@ new_data = new_data.replace("[CHANGELOG]", changelog_data)
 
 create_dir_parent("output/new.html")
 with open("output/new.html", "w") as f:
+    f.write(new_data)
+
+# generate new_websites.html
+with open("new_websites.html.template", "r") as f:
+    new_data = f.read()
+
+new_table_data = ""
+
+with db.new_session() as session:
+    # find all anipike webpages
+    new_urls = session.execute(
+        sqlalchemy.select(db.AnipikeWebsite)
+            .order_by(db.AnipikeWebsite.link_name)
+    ).scalars()
+
+    for url in new_urls:
+        if not url.link.startswith("http"):
+            continue
+
+        from_date_str = url.interval.from_date.strftime("%m/%d/%Y")
+        to_date_str = url.interval.to_date.strftime("%m/%d/%Y")
+
+        new_table_data += f"<tr><td><a href=\"{url.link}\">{url.link_name}</a></td><td>{from_date_str}</td><td>{to_date_str}</td><td>\n"
+        preserved_urls = []
+        preserved_url_sources = []
+        try:
+            preserved_urls, preserved_url_sources = db.get_archived_urls(url.link_normalized, None)
+        except Exception:
+            continue
+
+        if len(preserved_urls) > 0:
+            for i in range(0, len(preserved_urls)):
+                if i > 0:
+                    new_table_data += ", "
+                new_table_data += f"<a href=\"{preserved_urls[i]}\">{preserved_url_sources[i]}</a>"
+        else:
+            new_table_data += "-"
+        new_table_data += "</td></tr>"
+
+new_data = new_data.replace("[TABLE_CONTENTS]", new_table_data)
+
+create_dir_parent("output/new_websites.html")
+with open("output/new_websites.html", "w") as f:
     f.write(new_data)

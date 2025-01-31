@@ -135,7 +135,8 @@ class WaybackCache(Base):
 
 skip_wayback_websites = [
     "http://members.tripod.com/GeneralsLove", # none on wayback, 100+ missing TXT files, takes ages
-    "http://members.tripod.com/~K_Seiya"
+    "http://members.tripod.com/~K_Seiya",
+    "http://members.tripod.com/~Kuno_Higatashi2"
 ]
 
 def get_http_contents_from_wayback(url, date, ignore_html=False):
@@ -149,7 +150,7 @@ def get_http_contents_from_wayback(url, date, ignore_html=False):
         ).scalars():
             cache_entries.append(e)
         if len(cache_entries) <= 0:
-            user_agent = "Mozilla/5.0 (Windows NT 5.1; rv:40.0) Gecko/20100101 Firefox/40.0"
+            user_agent = "Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/131.0"
             cached_keys = {}
             retries = 7
             retry_sleep = 15
@@ -162,6 +163,7 @@ def get_http_contents_from_wayback(url, date, ignore_html=False):
                         cached_keys[snapshot.timestamp] = True
                         archive_url = f"https://web.archive.org/web/{snapshot.timestamp}id_/{snapshot.original}"
                         try:
+                            time.sleep(20)
                             r = requests.get(archive_url, stream=True, timeout=60)
                         except Exception:
                             logger.error(f"Could not download {archive_url} - requests connection error")
@@ -287,32 +289,29 @@ def get_archived_urls(url, date):
             if x.startswith("!"):
                 if url == x[1:]:
                     logger.info(f"Using manual replacement for {x[1:]}")
-                    return [still_online_urls[x]]
+                    return [still_online_urls[x]], ["online"]
             if url.startswith(x):
-                return [url.replace(x, still_online_urls[x])]
+                return [url.replace(x, still_online_urls[x])], ["online"]
     # load html from database
     with new_session() as session:
         result = None
         url_variants = list(map(lambda x: x if x.endswith("/") else (x+"/"), get_url_variants(url)))
-        if "fredart" in url:
-            print(url_variants)
         finds = []
         for uv in url_variants:
             for result in session.execute(
                 select(UrlLocation)
                     .where(bindparam('url', uv).startswith(UrlLocation.url))
             ).scalars():
-                finds.append((url_location_to_url(url, result), result.date))
+                finds.append((url_location_to_url(url, result), result.date, result.source))
         finds = list(filter(lambda x: x[0] is not None, finds))
         if date is not None:
             finds_prev = list(filter(lambda x: x[1] <= date, finds))
             finds_next = list(filter(lambda x: x[1] > date, finds))
             finds_prev.sort(key=lambda x: x[1], reverse=True)
             finds_next.sort(key=lambda x: x[1], reverse=False)
-            return list(map(lambda x: x[0], finds_prev + finds_next))
+            finds = finds_prev + finds_next
         else:
             finds.sort(key=lambda x: x[1], reverse=False)
-            return list(map(lambda x: x[0], finds))
-
+        return list(map(lambda x: x[0], finds)), list(map(lambda x: x[2], finds))
 
 Base.metadata.create_all(engine)

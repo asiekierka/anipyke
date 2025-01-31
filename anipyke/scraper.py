@@ -52,8 +52,8 @@ def has_no_extension(name):
     rname = name.rsplit("/", maxsplit=1)[-1]
     return "." not in rname
 
-protocol_in_front = re.compile("^[a-zA-Z]+:")
-css_url = re.compile("url\(([^)]+)\)")
+protocol_in_front = re.compile(r"^[a-zA-Z]+:")
+css_url = re.compile(r"url\(([^)]+)\)")
 tripod_members = re.compile(r"members\.tripod\.com/\~?([^/]+)")
 
 defunct_websites = [
@@ -65,10 +65,16 @@ blocked_websites = [
     "http://members.tripod.com/bin/counter",
     "http://ln.doubleclick.net",
     "http://ad.linkexchange.com",
+    "http://c1.thecounter.com",
+    "http://c2.thecounter.com",
+    "http://c3.thecounter.com",
+    "http://hg1.hitbox.com",
     "http://banner.linkexchange.com",
     "http://fastcounter.linkexchange.com",
     "http://leader.linkexchange.com",
-    "http://hb.lycos.com/header"
+    "http://hb.lycos.com/header",
+    "http://service.bfast.com",
+    "http://sm6.sitemeter.com"
 ]
 
 class webLinkModifierAttr(object):
