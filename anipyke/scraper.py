@@ -73,6 +73,9 @@ blocked_websites = [
     "http://fastcounter.linkexchange.com",
     "http://leader.linkexchange.com",
     "http://hb.lycos.com/header",
+    "http://m1.nedstatbasic.net",
+    "http://nl.nedstatbasic.net",
+    "http://ads.smartclicks.com",
     "http://service.bfast.com",
     "http://sm6.sitemeter.com"
 ]
@@ -125,6 +128,8 @@ class WebScraper(object):
         basic_prefix_url = normalize_url(self.urls[0])
         self.prefix = basic_prefix_url.replace("https://", "").replace("http://", "")
         self.prefix_urls = [self.prefix.lower()]
+        if self.prefix.lower().endswith(".htm") or self.prefix.lower().endswith(".html"):
+            self.prefix_urls.append(self.prefix.lower().rsplit("/", 1)[0])
         if tripod_members.search(basic_prefix_url) is not None:
             m = tripod_members.search(basic_prefix_url)
             member_name = m.group(1).lower()
